@@ -1,0 +1,565 @@
+import sqlite3
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import csv
+
+# Conexión a la base de datos
+conn = sqlite3.connect("recursos_humanos.db")
+c = conn.cursor()
+
+# Crear tablas si no existen
+c.execute('''
+    CREATE TABLE IF NOT EXISTS funcionarios (
+        cedula INTEGER PRIMARY KEY,
+        nombre_completo TEXT,
+        legajo INTEGER,
+        grado TEXT,
+        subescalafon TEXT,
+        unidad_presupuestal TEXT
+    )
+''')
+
+c.execute('''
+    CREATE TABLE IF NOT EXISTS cargos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT UNIQUE
+    )
+''')
+
+c.execute('''
+    CREATE TABLE IF NOT EXISTS destinos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT UNIQUE
+    )
+''')
+
+c.execute('''
+    CREATE TABLE IF NOT EXISTS funcionarios_cargos (
+        funcionario_cedula INTEGER,
+        cargo_id INTEGER,
+        PRIMARY KEY (funcionario_cedula, cargo_id),
+        FOREIGN KEY (funcionario_cedula) REFERENCES funcionarios(cedula),
+        FOREIGN KEY (cargo_id) REFERENCES cargos(id)
+    )
+''')
+
+c.execute('''
+    CREATE TABLE IF NOT EXISTS funcionarios_destinos (
+        funcionario_cedula INTEGER,
+        destino_id INTEGER,
+        PRIMARY KEY (funcionario_cedula, destino_id),
+        FOREIGN KEY (funcionario_cedula) REFERENCES funcionarios(cedula),
+        FOREIGN KEY (destino_id) REFERENCES destinos(id)
+    )
+''')
+
+conn.commit()
+
+def buscar_funcionario():
+    cedula = entry_cedula_buscar.get()
+    nombre = entry_nombre_buscar_texto.get()
+
+    for item in tree_resultados_nombre.get_children():
+        tree_resultados_nombre.delete(item)
+
+    if cedula:
+        c.execute("SELECT * FROM funcionarios WHERE cedula=?", (cedula,))
+        resultado = c.fetchone()
+        if resultado:
+            entry_nombre_buscar.config(state="normal")
+            entry_legajo_buscar.config(state="normal")
+            entry_cargo_buscar.config(state="normal")
+            entry_grado_buscar.config(state="normal")
+            entry_subescalafon_buscar.config(state="normal")
+            entry_destino_buscar.config(state="normal")
+            entry_unidad_buscar.config(state="normal")
+
+            entry_nombre_buscar.delete(0, tk.END)
+            entry_legajo_buscar.delete(0, tk.END)
+            entry_cargo_buscar.delete(0, tk.END)
+            entry_grado_buscar.delete(0, tk.END)
+            entry_subescalafon_buscar.delete(0, tk.END)
+            entry_destino_buscar.delete(0, tk.END)
+            entry_unidad_buscar.delete(0, tk.END)
+
+            entry_nombre_buscar.insert(0, str(resultado[1] or ""))
+            entry_legajo_buscar.insert(0, str(resultado[2] or ""))
+            entry_cargo_buscar.insert(0, str(resultado[3] or ""))
+            entry_grado_buscar.insert(0, str(resultado[4] or ""))
+            entry_subescalafon_buscar.insert(0, str(resultado[5] or ""))
+            entry_destino_buscar.insert(0, str(resultado[6] or ""))
+            entry_unidad_buscar.insert(0, str(resultado[7] or ""))
+
+            entry_nombre_buscar.config(state="readonly")
+            entry_legajo_buscar.config(state="readonly")
+            entry_cargo_buscar.config(state="readonly")
+            entry_grado_buscar.config(state="readonly")
+            entry_subescalafon_buscar.config(state="readonly")
+            entry_destino_buscar.config(state="readonly")
+            entry_unidad_buscar.config(state="readonly")
+        else:
+            messagebox.showinfo("Información", "No se encontró ningún funcionario con esa cédula.")
+    elif nombre:
+        c.execute("SELECT * FROM funcionarios WHERE nombre_completo LIKE ?", ('%' + nombre + '%',))
+        resultados = c.fetchall()
+        if resultados:
+            for resultado in resultados:
+                tree_resultados_nombre.insert("", tk.END, values=resultado)
+        else:
+            messagebox.showinfo("Información", "No se encontraron funcionarios con ese nombre.")
+    else:
+        messagebox.showinfo("Información", "Por favor, ingrese una cédula o un nombre para buscar.")
+
+def configurar_tabla(tree, frame):
+    frame_tabla = ttk.Frame(frame)
+    frame_tabla.pack(fill=tk.BOTH, expand=True)
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar = ttk.Scrollbar(frame_tabla, orient=tk.VERTICAL, command=tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    tree.configure(yscrollcommand=scrollbar.set)
+    frame_tabla.grid_rowconfigure(0, weight=1)
+    frame_tabla.grid_columnconfigure(0, weight=1)
+
+def limpiar_formulario_busqueda():
+    if entry_cedula_buscar.get():
+        respuesta = messagebox.askyesno("Confirmación", "¿Desea limpiar el formulario sin guardar los cambios?")
+        if respuesta:
+            entry_cedula_buscar.delete(0, tk.END)
+            for item in tree_resultados_nombre.get_children():
+                tree_resultados_nombre.delete(item)
+
+def obtener_destinos():
+    c.execute("SELECT DISTINCT destino FROM funcionarios")
+    resultados = c.fetchall()
+    destinos = [""]
+    for resultado in resultados:
+        destinos.append(resultado[0])
+    return destinos
+
+def limpiar_formulario_modificacion():
+    campos_llenos = any([entry_nombre_modificar.get(), entry_legajo_modificar.get(), entry_cargo_modificar.get(), entry_grado_modificar.get(), entry_subescalafon_modificar.get(), entry_destino_modificar.get(), entry_unidad_modificar.get()])
+    if campos_llenos:
+        respuesta = messagebox.askyesno("Confirmación", "¿Desea limpiar el formulario sin guardar los cambios?")
+        if respuesta:
+            entry_cedula_modificar.delete(0, tk.END)
+            entry_nombre_modificar.delete(0, tk.END)
+            entry_legajo_modificar.delete(0, tk.END)
+            entry_cargo_modificar.delete(0, tk.END)
+            entry_grado_modificar.delete(0, tk.END)
+            entry_subescalafon_modificar.delete(0, tk.END)
+            entry_destino_modificar.delete(0, tk.END)
+            entry_unidad_modificar.delete(0, tk.END)
+
+def mostrar_todos_funcionarios():
+    for item in tree_todos.get_children():
+        tree_todos.delete(item)
+    c.execute("SELECT * FROM funcionarios")
+    resultados = c.fetchall()
+    for resultado in resultados:
+        tree_todos.insert("", tk.END, values=resultado)
+
+def cargar_csv():
+    archivo = filedialog.askopenfilename(filetypes=[("Archivos CSV", "*.csv")])
+    if archivo:
+        try:
+            c.execute("DELETE FROM funcionarios")
+            conn.commit()
+
+            with open(archivo, 'r', encoding='utf-7') as file:
+                csv_reader = csv.reader(file)
+                next(csv_reader)
+
+                for fila_index, fila in enumerate(csv_reader):
+                    if len(fila) >= 5:
+                        cedula = fila[0].strip()
+                        nombre_completo = fila[1].strip()
+                        legajo = fila[2].strip()
+                        grado = fila[3].strip()
+                        subescalafon = fila[4].strip()
+
+                        if not cedula:
+                            messagebox.showerror("Error", f"Se encontró una fila con cédula vacía en la línea {fila_index + 2}. La fila no fue importada.")
+                            continue
+
+                        try:
+                            c.execute('''
+                                INSERT OR REPLACE INTO funcionarios (cedula, nombre_completo, legajo, grado, subescalafon)
+                                VALUES (?, ?, ?, ?, ?)
+                            ''', (cedula, nombre_completo, legajo, grado, subescalafon))
+                            conn.commit()
+                        except sqlite3.IntegrityError as e:
+                            messagebox.showerror("Error de base de datos", f"Error de integridad en la línea {fila_index + 2}: {e}. La fila con cédula {cedula} no fue importada.")
+                            conn.rollback()
+                        except sqlite3.Error as e:
+                            messagebox.showerror("Error de base de datos", f"Ocurrió un error de base de datos en la línea {fila_index + 2}: {e}")
+                            conn.rollback()
+                    else:
+                        messagebox.showerror("Error de CSV", f"La fila {fila_index + 2} tiene menos de 5 columnas.")
+                        continue
+
+            messagebox.showinfo("Éxito", "Datos cargados correctamente desde el archivo CSV.")
+            mostrar_todos_funcionarios()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Ocurrió un error al cargar el archivo CSV: {e}")
+            if 'conn' in locals() and conn:
+                conn.rollback()
+
+def modificar_funcionario():
+    cedula = entry_cedula_modificar.get()
+    nombre = entry_nombre_modificar.get()
+    legajo = entry_legajo_modificar.get()
+    cargo = entry_cargo_modificar.get()
+    grado = entry_grado_modificar.get()
+    subescalafon = entry_subescalafon_modificar.get()
+    destino = destino_seleccionado_modificar.get()
+    unidad_presupuestal = entry_unidad_modificar.get()
+
+    try:
+        c.execute('''
+            UPDATE funcionarios
+            SET nombre_completo=?, legajo=?, cargo=?, grado=?, subescalafon=?, destino=?, unidad_presupuestal=?
+            WHERE cedula=?
+        ''', (nombre, legajo, cargo, grado, subescalafon, destino, unidad_presupuestal, cedula))
+        conn.commit()
+        messagebox.showinfo("Éxito", "Funcionario modificado correctamente.")
+        mostrar_todos_funcionarios()
+    except sqlite3.Error as e:
+        messagebox.showerror("Error de base de datos", f"Ocurrió un error al modificar el funcionario: {e}")
+        conn.rollback()
+
+def alta_funcionario_modificar():
+    cedula = entry_cedula_modificar.get()
+    nombre_completo = entry_nombre_modificar.get()
+    legajo = entry_legajo_modificar.get()
+    cargo = entry_cargo_modificar.get()
+    grado = entry_grado_modificar.get()
+    subescalafon = entry_subescalafon_modificar.get()
+    destino = entry_destino_modificar.get()
+    unidad_presupuestal = entry_unidad_modificar.get()
+
+    if cedula:
+        c.execute("SELECT cedula FROM funcionarios WHERE cedula=?", (cedula,))
+        resultado = c.fetchone()
+        if resultado:
+            messagebox.showerror("Error", "Ya existe un funcionario con esa cédula.")
+        else:
+            c.execute("INSERT INTO funcionarios VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                      (cedula, nombre_completo, legajo, cargo, grado, subescalafon, destino, unidad_presupuestal))
+            conn.commit()
+            messagebox.showinfo("Éxito", "Funcionario dado de alta correctamente.")
+            mostrar_todos_funcionarios()
+    else:
+        messagebox.showerror("Error", "Debe ingresar la cédula del funcionario a dar de alta.")
+
+# Interfaz gráfica
+root = tk.Tk()
+root.title("Gestión de Recursos Humanos")
+
+# Crear el Notebook (pestañas)
+notebook = ttk.Notebook(root)
+notebook.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+# Crear la barra de menú
+menu_bar = tk.Menu(root)
+root.config(menu=menu_bar)
+
+# Menú Archivo
+file_menu = tk.Menu(menu_bar, tearoff=0)
+menu_bar.add_cascade(label="Archivo", menu=file_menu)
+file_menu.add_command(label="Salir y cerrar", command=root.quit)  # Usar root.quit para cerrar la aplicación
+
+# Menú Acerca de (modificado)
+def mostrar_acerca_de():
+    messagebox.showinfo(
+        "Acerca de",
+        "Gestión de Recursos Humanos\nEstá trabajando en la versión 0.5"
+    )
+
+menu_bar.add_command(label="Acerca de", command=mostrar_acerca_de)
+
+# Pestaña de Búsqueda
+frame_busqueda = ttk.Frame(notebook)
+notebook.add(frame_busqueda, text="Búsqueda")
+ttk.Button(frame_busqueda, text="Actualizar", command=buscar_funcionario).pack(anchor="ne", padx=10, pady=10)
+
+
+# Frame de búsqueda
+frame_buscar = ttk.LabelFrame(frame_busqueda, text="Buscar Funcionario")
+frame_buscar.pack(padx=10, pady=10)
+ttk.Label(frame_buscar, text="Cédula:").grid(row=0, column=0, padx=5, pady=5)
+entry_cedula_buscar = ttk.Entry(frame_buscar)
+entry_cedula_buscar.grid(row=0, column=1, padx=5, pady=5)
+ttk.Label(frame_buscar, text="Nombre:").grid(row=1, column=0, padx=5, pady=5)
+entry_nombre_buscar_texto = ttk.Entry(frame_buscar)
+entry_nombre_buscar_texto.grid(row=1, column=1, padx=5, pady=5)
+ttk.Button(frame_buscar, text="Buscar", command=buscar_funcionario).grid(row=0, column=2, rowspan=2, padx=5, pady=5)
+ttk.Button(frame_buscar, text="Limpiar", command=limpiar_formulario_busqueda).grid(row=0, column=3, rowspan=2, padx=5, pady=5)
+
+entry_cedula_buscar.bind("<Return>", lambda event: buscar_funcionario())
+entry_nombre_buscar_texto.bind("<Return>", lambda event: buscar_funcionario())
+
+# Frame para mostrar resultados de búsqueda
+frame_resultados_busqueda = ttk.LabelFrame(frame_busqueda, text="Resultados de Búsqueda")
+frame_resultados_busqueda.pack(padx=10, pady=10)
+
+ttk.Label(frame_resultados_busqueda, text="Nombre Completo:").grid(row=0, column=0, padx=5, pady=5)
+entry_nombre_buscar = ttk.Entry(frame_resultados_busqueda, state="readonly")
+entry_nombre_buscar.grid(row=0, column=1, padx=5, pady=5)
+
+ttk.Label(frame_resultados_busqueda, text="Legajo:").grid(row=1, column=0, padx=5, pady=5)
+entry_legajo_buscar = ttk.Entry(frame_resultados_busqueda, state="readonly")
+entry_legajo_buscar.grid(row=1, column=1, padx=5, pady=5)
+
+ttk.Label(frame_resultados_busqueda, text="Cargo:").grid(row=2, column=0, padx=5, pady=5)
+entry_cargo_buscar = ttk.Entry(frame_resultados_busqueda, state="readonly")
+entry_cargo_buscar.grid(row=2, column=1, padx=5, pady=5)
+
+ttk.Label(frame_resultados_busqueda, text="Grado:").grid(row=3, column=0, padx=5, pady=5)
+entry_grado_buscar = ttk.Entry(frame_resultados_busqueda, state="readonly")
+entry_grado_buscar.grid(row=3, column=1, padx=5, pady=5)
+
+ttk.Label(frame_resultados_busqueda, text="Subescalafón:").grid(row=4, column=0, padx=5, pady=5)
+entry_subescalafon_buscar = ttk.Entry(frame_resultados_busqueda, state="readonly")
+entry_subescalafon_buscar.grid(row=4, column=1, padx=5, pady=5)
+
+ttk.Label(frame_resultados_busqueda, text="Destino:").grid(row=5, column=0, padx=5, pady=5)
+entry_destino_buscar = ttk.Entry(frame_resultados_busqueda, state="readonly")
+entry_destino_buscar.grid(row=5, column=1, padx=5, pady=5)
+
+ttk.Label(frame_resultados_busqueda, text="Unidad Presupuestal:").grid(row=6, column=0, padx=5, pady=5)
+entry_unidad_buscar = ttk.Entry(frame_resultados_busqueda, state="readonly")
+entry_unidad_buscar.grid(row=6, column=1, padx=5, pady=5)
+
+
+# Frame de resultados
+frame_resultados = ttk.LabelFrame(frame_busqueda, text="Resultados de la Búsqueda")
+frame_resultados.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+# Tabla de resultados por nombre
+tree_resultados_nombre = ttk.Treeview(frame_resultados, columns=("Cédula", "Nombre Completo", "Legajo", "Grado", "Subescalafón", "Cargo", "Destino", "Unidad Presupuestal"), show="headings")
+tree_resultados_nombre.heading("Cédula", text="Cédula")
+tree_resultados_nombre.heading("Nombre Completo", text="Nombre Completo")
+tree_resultados_nombre.heading("Legajo", text="Legajo")
+tree_resultados_nombre.heading("Grado", text="Grado")
+tree_resultados_nombre.heading("Subescalafón", text="Subescalafón")
+tree_resultados_nombre.heading("Cargo", text="Cargo")
+tree_resultados_nombre.heading("Destino", text="Destino")
+tree_resultados_nombre.heading("Unidad Presupuestal", text="Unidad Presupuestal")
+
+# Configurar la tabla
+configurar_tabla(tree_resultados_nombre, frame_resultados)
+
+# Barra de desplazamiento vertical parala tabla de resultados por nombre
+scrollbar_resultados_nombre = ttk.Scrollbar(frame_resultados, orient=tk.VERTICAL, command=tree_resultados_nombre.yview)
+scrollbar_resultados_nombre.pack(side=tk.RIGHT, fill=tk.Y)
+tree_resultados_nombre.configure(yscrollcommand=scrollbar_resultados_nombre.set)
+
+# Configurar la expansión de la tabla y sus columnas
+frame_resultados.grid_rowconfigure(0, weight=1)
+frame_resultados.grid_columnconfigure(0, weight=1)
+
+# Pestaña de Mostrar Todos los Funcionarios
+frame_todos = ttk.Frame(notebook)
+notebook.add(frame_todos, text="Mostrar Todos")
+ttk.Button(frame_todos, text="Actualizar", command=mostrar_todos_funcionarios).pack(anchor="ne", padx=10, pady=10)
+
+# Treeview para mostrar todos los funcionarios
+tree_todos = ttk.Treeview(frame_todos, columns=("Cédula", "Nombre Completo", "Legajo","Cargo", "Grado", "Subescalafón", "Destino", "Unidad Presupuestal"), show="headings")
+for col in tree_todos["columns"]:
+    tree_todos.heading(col, text=col)
+tree_todos.pack(padx=10, pady=10)
+
+def actualizar_destinos_modificar():
+    menu_destinos_modificar["menu"].delete(0, "end")
+    for destino in obtener_destinos():
+        menu_destinos_modificar["menu"].add_command(label=destino, command=tk._setit(destino_seleccionado_modificar, destino))
+
+def agregar_destino_modificar():
+    # Crear un nuevo Frame para el destino adicional
+    frame_destino_adicional = ttk.Frame(frame_modificar_datos)
+    frame_destino_adicional.grid(row=len(destinos_adicionales) + 7, column=1, padx=5, pady=5)
+
+    # Crear un Combobox para el destino adicional
+    destino_adicional_seleccionado = tk.StringVar()
+    combo_destino_adicional = ttk.Combobox(frame_destino_adicional, textvariable=destino_adicional_seleccionado, values=obtener_destinos())
+    combo_destino_adicional.pack(side=tk.LEFT)
+
+    # Botón "-" para eliminar el destino adicional
+    def eliminar_destino_adicional():
+        frame_destino_adicional.destroy()
+        destinos_adicionales.remove(frame_destino_adicional)
+
+    ttk.Button(frame_destino_adicional, text="-", command=eliminar_destino_adicional).pack(side=tk.LEFT)
+
+    destinos_adicionales.append(frame_destino_adicional)
+
+
+
+# Pestaña de Modificación
+notebook.bind("<<NotebookTabChanged>>", lambda event: actualizar_destinos_modificar() if notebook.index(notebook.select()) == 2 else None)
+frame_modificar = ttk.Frame(notebook)
+notebook.add(frame_modificar, text="Modificación")
+ttk.Button(frame_modificar, text="Actualizar", command=lambda: [buscar_funcionario_modificar(), mostrar_todos_funcionarios()]).pack(anchor="ne", padx=10, pady=10)
+
+# Frame de búsqueda para modificación
+frame_buscar_modificar = ttk.LabelFrame(frame_modificar, text="Buscar Funcionario a Modificar")
+frame_buscar_modificar.pack(padx=10, pady=10)
+ttk.Label(frame_buscar_modificar, text="Cédula:").grid(row=0, column=0, padx=5, pady=5)
+entry_cedula_modificar = ttk.Entry(frame_buscar_modificar)
+entry_cedula_modificar.grid(row=0, column=1, padx=5, pady=5)
+
+def buscar_funcionario_modificar():
+    cedula = entry_cedula_modificar.get()
+    c.execute("SELECT * FROM funcionarios WHERE cedula=?", (cedula,))
+    resultado = c.fetchone()
+    if resultado:
+        entry_nombre_modificar.delete(0, tk.END)
+        entry_legajo_modificar.delete(0, tk.END)
+        entry_cargo_modificar.delete(0, tk.END)
+        entry_grado_modificar.delete(0, tk.END)
+        entry_subescalafon_modificar.delete(0, tk.END)
+        destino_seleccionado_modificar.set(resultado[6] or "")
+        entry_unidad_modificar.delete(0, tk.END)
+        entry_nombre_modificar.insert(0, str(resultado[1] or ""))
+        entry_legajo_modificar.insert(0, str(resultado[2] or ""))
+        entry_cargo_modificar.insert(0, str(resultado[3] or ""))
+        entry_grado_modificar.insert(0, str(resultado[4] or ""))
+        entry_subescalafon_modificar.insert(0, str(resultado[5] or ""))
+        entry_unidad_modificar.insert(0, str(resultado[7] or ""))
+    else:
+        respuesta = messagebox.askyesno("Información", "¿Desea dar de alta un nuevo funcionario con esta cédula?")
+        if respuesta:
+            entry_nombre_modificar.delete(0, tk.END)
+            entry_legajo_modificar.delete(0, tk.END)
+            entry_cargo_modificar.delete(0, tk.END)
+            entry_grado_modificar.delete(0, tk.END)
+            entry_subescalafon_modificar.delete(0, tk.END)
+            destino_seleccionado_modificar.set("")
+            entry_unidad_modificar.delete(0, tk.END)
+
+ttk.Button(frame_buscar_modificar, text="Buscar", command=buscar_funcionario_modificar).grid(row=0, column=2, padx=5, pady=5)
+
+# Frame de modificación (Mover esta línea al principio)
+frame_modificar_datos = ttk.LabelFrame(frame_modificar, text="Modificar Funcionario")
+frame_modificar_datos.pack(padx=10, pady=10)
+
+
+# Frame de modificación
+frame_modificacion_campos = ttk.LabelFrame(frame_modificar, text="Modificar/Alta Datos del Funcionario")
+frame_modificacion_campos.pack(padx=10, pady=10)
+ttk.Label(frame_modificacion_campos, text="Nombre Completo:").grid(row=0, column=0, padx=5, pady=5)
+entry_nombre_modificar = ttk.Entry(frame_modificacion_campos)
+entry_nombre_modificar.grid(row=0, column=1, padx=5, pady=5)
+ttk.Label(frame_modificacion_campos, text="Legajo:").grid(row=1, column=0, padx=5, pady=5)
+entry_legajo_modificar = ttk.Entry(frame_modificacion_campos)
+entry_legajo_modificar.grid(row=1, column=1, padx=5, pady=5)
+ttk.Label(frame_modificacion_campos, text="Cargo:").grid(row=2, column=0, padx=5, pady=5)
+entry_cargo_modificar = ttk.Entry(frame_modificacion_campos)
+entry_cargo_modificar.grid(row=2, column=1, padx=5, pady=5)
+ttk.Label(frame_modificacion_campos, text="Grado:").grid(row=3, column=0, padx=5, pady=5)
+entry_grado_modificar = ttk.Entry(frame_modificacion_campos)
+entry_grado_modificar.grid(row=3, column=1, padx=5, pady=5)
+ttk.Label(frame_modificacion_campos, text="Subescalafón:").grid(row=4, column=0, padx=5, pady=5)
+entry_subescalafon_modificar = ttk.Entry(frame_modificacion_campos)
+entry_subescalafon_modificar.grid(row=4, column=1, padx=5, pady=5)
+# Destino (con botón "+")
+ttk.Label(frame_modificar_datos, text="Destino:").grid(row=6, column=0, padx=5, pady=5)
+destino_seleccionado_modificar = tk.StringVar()
+combo_destino_modificar = ttk.Combobox(frame_modificar_datos, textvariable=destino_seleccionado_modificar, values=obtener_destinos())
+combo_destino_modificar.grid(row=6, column=1, padx=5, pady=5)
+
+destinos_adicionales = []  # Lista para almacenar los frames de destinos adicionales
+
+ttk.Button(frame_modificar_datos, text="+", command=agregar_destino_modificar).grid(row=6, column=2, padx=5, pady=5)
+
+
+ttk.Label(frame_modificacion_campos, text="Unidad Presupuestal:").grid(row=6, column=0, padx=5, pady=5)
+entry_unidad_modificar = ttk.Entry(frame_modificacion_campos)
+entry_unidad_modificar.grid(row=6, column=1, padx=5, pady=5)
+
+ttk.Button(frame_modificacion_campos, text="Modificar Funcionario", command=modificar_funcionario).grid(row=7, column=1, padx=5, pady=5)
+ttk.Button(frame_modificacion_campos, text="Alta Funcionario", command=alta_funcionario_modificar).grid(row=8, column=1, padx=5, pady=5)
+ttk.Button(frame_modificacion_campos, text="Limpiar", command=limpiar_formulario_modificacion).grid(row=9, column=1, padx=5, pady=5)
+
+# Pestaña de Funcionarios por Destino
+frame_destinos = ttk.Frame(notebook)
+notebook.add(frame_destinos, text="Funcionarios por Destino")
+
+# Treeview para mostrar funcionarios por destino
+tree_destinos = ttk.Treeview(frame_destinos, columns=("Cédula", "Nombre Completo", "Legajo", "Cargo", "Grado", "Subescalafón", "Destino", "Unidad Presupuestal"), show="headings")
+for col in tree_destinos["columns"]:
+    tree_destinos.heading(col, text=col)
+tree_destinos.pack(padx=10, pady=10)
+
+def actualizar_destinos():
+    destinos.clear()
+    destinos.append("Todos")
+    c.execute("SELECT DISTINCT destino FROM funcionarios")
+    resultados = c.fetchall()
+    for resultado in resultados:
+        destinos.append(resultado[0])
+    menu_destinos["menu"].delete(0, "end")
+    for destino in destinos:
+        menu_destinos["menu"].add_command(label=destino, command=tk._setit(destino_seleccionado, destino))
+
+def mostrar_funcionarios_por_destino():
+    destino = destino_seleccionado.get()
+    for item in tree_destinos.get_children():
+        tree_destinos.delete(item)
+    if (destino == "Todos"):
+        c.execute("SELECT * FROM funcionarios")
+    else:
+        c.execute("SELECT * FROM funcionarios WHERE destino=?", (destino,))
+    resultados = c.fetchall()
+    for resultado in resultados:
+        tree_destinos.insert("", tk.END, values=resultado)
+
+ttk.Button(frame_destinos, text="Actualizar", command=lambda: [actualizar_destinos(), mostrar_funcionarios_por_destino()]).pack(anchor="ne", padx=10, pady=10)
+
+# Frame para el menú desplegable y el botón de añadir destino
+frame_menu_destino = ttk.Frame(frame_destinos)
+frame_menu_destino.pack(pady=10)
+
+destinos = ["Todos"]
+c.execute("SELECT DISTINCT destino FROM funcionarios")
+resultados = c.fetchall()
+for resultado in resultados:
+    destinos.append(resultado[0])
+destino_seleccionado = tk.StringVar(frame_menu_destino)
+destino_seleccionado.set(destinos[0])
+
+def actualizar_destino(*args):
+    mostrar_funcionarios_por_destino()
+
+destino_seleccionado.trace("w", actualizar_destino)
+
+menu_destinos = ttk.OptionMenu(frame_menu_destino, destino_seleccionado, *destinos)
+menu_destinos.pack(side=tk.LEFT)
+
+def añadir_destino():
+    nuevo_destino = entry_nuevo_destino.get()
+    if nuevo_destino:
+        c.execute("SELECT destino FROM funcionarios WHERE destino=?", (nuevo_destino,))
+        resultado = c.fetchone()
+        if resultado:
+            messagebox.showerror("Error", "Ya existe un destino con ese nombre.")
+        else:
+            c.execute("INSERT INTO funcionarios (destino) VALUES (?)", (nuevo_destino,))
+            conn.commit()
+            actualizar_destinos()
+            messagebox.showinfo("Éxito", "Destino añadido correctamente.")
+    else:
+        messagebox.showerror("Error", "Debe ingresar el nombre del nuevo destino.")
+
+ttk.Button(frame_menu_destino, text="Añadir Destino", command=añadir_destino).pack(side=tk.LEFT)
+entry_nuevo_destino = ttk.Entry(frame_menu_destino)
+entry_nuevo_destino.pack(side=tk.LEFT)
+
+
+# Mostrar todos los funcionarios al iniciar
+mostrar_todos_funcionarios()
+
+root.mainloop()
+
+conn.close()
